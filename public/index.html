@@ -705,6 +705,100 @@
         </div>
       </div>
 
+      <!-- WhatsApp Auto Cron Job & Manual Numbers Section -->
+      <div class="bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 p-5 rounded-2xl shadow-sm border border-emerald-200/90 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 pb-3">
+          <div>
+            <h3 class="font-extrabold text-slate-900 text-base flex items-center gap-2">
+              <span class="text-xl">⏰</span> દૈનિક WhatsApp ઓટોમેશન & સાંજે ૬:૦૦ ક્રોનજોબ (Daily Auto 6:00 PM Summary)
+            </h3>
+            <p class="text-xs text-slate-600">
+              દરરોજ સાંજે ૬:૦૦ વાગે નક્કી કરેલા નંબરો પર દૈનિક ફેરાનો સારાંશ અને બાકી વોર્ડનું લિસ્ટ આપોઆપ તૈયાર કરી મોકલો:
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="wa-cron-badge-status" class="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              🟢 ઓટો ક્રોનજોબ સક્રિય
+            </span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Automation Controls -->
+          <div class="bg-white p-4 rounded-xl border border-emerald-200 space-y-3 shadow-xs">
+            <h4 class="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+              <span>⚙️</span> ક્રોનજોબ સેટિંગ્સ:
+            </h4>
+
+            <div class="space-y-1">
+              <label class="text-[11px] font-bold text-slate-600 block">ઓટોમેશન સ્થિતિ:</label>
+              <select id="wa-cron-enabled" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <option value="1">🟢 સક્રિય (Active - Auto Send)</option>
+                <option value="0">🔴 નિષ્ક્રિય (Disabled)</option>
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-[11px] font-bold text-slate-600 block">રોજ મોકલવાનો સમય (Daily Time):</label>
+              <input type="time" id="wa-cron-time" value="18:00" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-blue-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <span class="text-[10px] text-slate-400 block">(ડિફોલ્ટ: સાંજે 18:00 એટલે કે 6:00 PM)</span>
+            </div>
+
+            <div class="pt-2">
+              <button onclick="saveWhatsAppCronConfig()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-lg shadow transition active:scale-95 flex items-center justify-center gap-1.5">
+                <span>💾</span> ઓટોમેશન સેટિંગ્સ સાચવો
+              </button>
+            </div>
+          </div>
+
+          <!-- Target Numbers List (Manual numbers section) -->
+          <div class="bg-white p-4 rounded-xl border border-emerald-200 space-y-3 shadow-xs md:col-span-2">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <span>📱</span> મોકલવા માટેના મોબાઇલ નંબરો (Manual WhatsApp Numbers):
+              </h4>
+              <div class="flex items-center gap-1 text-[11px]">
+                <button type="button" onclick="quickAddAllSSINumbers()" class="text-blue-700 hover:underline font-bold bg-blue-50 px-2 py-0.5 rounded">
+                  + ૧૩ SSI નંબરો ઉમેરો
+                </button>
+              </div>
+            </div>
+
+            <p class="text-[11px] text-slate-500">
+              અહીં તમે જે મોબાઈલ નંબર દાખલ કરશો તેમને રોજ સાંજે ૬:૦૦ વાગે વોટ્સએપ સારાંશ મળશે (અલ્પવિરામ <code>,</code> અથવા નવી લીટી દ્વારા અલગ કરો):
+            </p>
+
+            <textarea id="wa-cron-numbers" rows="3" placeholder="દા.ત. 9974599703, 9925182979, 9825000000" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div class="text-[11px] text-emerald-800 font-bold" id="wa-cron-last-sent-text">
+                છેલ્લે મોકલેલ: ક્યારેય નહીં
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="previewWhatsAppCronMessage()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center gap-1">
+                  <span>👁️</span> પ્રિવ્યુ જુઓ
+                </button>
+                <button type="button" onclick="triggerWhatsAppNow()" class="bg-green-600 hover:bg-green-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow transition active:scale-95 flex items-center gap-1">
+                  <span>📲</span> હમણાં ટેસ્ટ મોકલો (Dispatch Now)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Message Preview Box -->
+        <div id="wa-preview-box" class="hidden bg-white p-4 rounded-xl border border-slate-200 space-y-2">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h5 class="font-bold text-xs text-slate-800 flex items-center gap-1">
+              <span>💬</span> WhatsApp મેસેજ પ્રિવ્યુ (Live Generated Text):
+            </h5>
+            <button onclick="document.getElementById('wa-preview-box').classList.add('hidden')" class="text-xs text-slate-400 hover:text-slate-600">✕ બંધ કરો</button>
+          </div>
+          <pre id="wa-preview-content" class="text-xs font-mono bg-slate-50 p-3 rounded-lg border border-slate-200 text-slate-800 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed"></pre>
+          <div id="wa-recipients-pills" class="flex flex-wrap gap-1.5 pt-1"></div>
+        </div>
+      </div>
+
       <!-- Master Tractors List -->
       <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
         <h3 class="font-extrabold text-slate-900 text-base flex items-center gap-2">
@@ -2047,9 +2141,10 @@
     async function renderMasterSettings() {
       await renderMasterFleetCards();
 
-      // Load passwords table if admin
+      // Load passwords table & WhatsApp cron if admin
       if (isAdmin) {
         loadWardPasswordsTable();
+        loadWhatsAppCronConfig();
       } else {
         document.getElementById("ward-passwords-tbody").innerHTML = `
           <tr>
@@ -2058,6 +2153,204 @@
             </td>
           </tr>
         `;
+      }
+    }
+
+    // ==========================================
+    // WHATSAPP CRON JOB & AUTOMATION LOGIC
+    // ==========================================
+    async function loadWhatsAppCronConfig() {
+      try {
+        const res = await fetch("/api/whatsapp_cron");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const enabledSelect = document.getElementById("wa-cron-enabled");
+        if (enabledSelect) enabledSelect.value = data.enabled ? "1" : "0";
+
+        const timeInput = document.getElementById("wa-cron-time");
+        if (timeInput && data.time) timeInput.value = data.time;
+
+        const numbersArea = document.getElementById("wa-cron-numbers");
+        if (numbersArea && data.numbers) numbersArea.value = data.numbers;
+
+        const badge = document.getElementById("wa-cron-badge-status");
+        if (badge) {
+          if (data.enabled) {
+            badge.className = "text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300";
+            badge.innerText = `🟢 ઓટો ક્રોનજોબ સક્રિય (${data.time || '18:00'})`;
+          } else {
+            badge.className = "text-xs px-2.5 py-1 rounded-full font-bold bg-slate-200 text-slate-700 border border-slate-300";
+            badge.innerText = "🔴 ઓટો ક્રોનજોબ બંધ";
+          }
+        }
+
+        const lastSentEl = document.getElementById("wa-cron-last-sent-text");
+        if (lastSentEl) {
+          lastSentEl.innerText = data.last_sent_date ? `છેલ્લે મોકલેલ: ${data.last_sent_date}` : "છેલ્લે મોકલેલ: ક્યારેય નહીં";
+        }
+      } catch (e) {
+        console.warn("Could not load WhatsApp cron config:", e);
+      }
+    }
+
+    async function saveWhatsAppCronConfig() {
+      if (!isAdmin) {
+        showToast("સેટિંગ્સ બદલવા માટે માસ્ટર એડમિન લોગિન જરૂરી છે!", "⚠️", "bg-amber-600");
+        openMasterAdminPrompt();
+        return;
+      }
+
+      const enabled = document.getElementById("wa-cron-enabled").value === "1";
+      const time = document.getElementById("wa-cron-time").value.trim() || "18:00";
+      const numbers = document.getElementById("wa-cron-numbers").value.trim();
+      const pinToUse = cachedAdminPin || sessionStorage.getItem("admin_pin") || "87654321";
+
+      try {
+        const res = await fetch("/api/whatsapp_cron", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            admin_pin: pinToUse,
+            enabled: enabled,
+            time: time,
+            numbers: numbers
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, "✅", "bg-emerald-600");
+          loadWhatsAppCronConfig();
+        } else {
+          showToast(data.error || "ભૂલ આવી!", "❌", "bg-rose-600");
+        }
+      } catch (e) {
+        showToast("સર્વર એરર!", "❌", "bg-rose-600");
+      }
+    }
+
+    function quickAddAllSSINumbers() {
+      const numbersArea = document.getElementById("wa-cron-numbers");
+      if (!numbersArea) return;
+
+      const ssiList = (wardsData && wardsData.length > 0) ? wardsData : OFFICIAL_WARDS;
+      const phoneSet = new Set();
+      ssiList.forEach(w => {
+        if (w.ssi_phone && w.ssi_phone.trim()) {
+          phoneSet.add(w.ssi_phone.trim());
+        }
+      });
+
+      const current = numbersArea.value.trim();
+      const existingList = current ? current.split(/[\n,]+/).map(s => s.trim()).filter(Boolean) : [];
+      existingList.forEach(p => phoneSet.add(p));
+
+      numbersArea.value = Array.from(phoneSet).join(", ");
+      showToast(`૧૩ વોર્ડના ${phoneSet.size} મોબાઈલ નંબરો ઉમેરાઈ ગયા!`, "📱", "bg-blue-600");
+    }
+
+    async function previewWhatsAppCronMessage() {
+      const box = document.getElementById("wa-preview-box");
+      const contentEl = document.getElementById("wa-preview-content");
+      const pillsContainer = document.getElementById("wa-recipients-pills");
+      if (!box || !contentEl) return;
+
+      box.classList.remove("hidden");
+      contentEl.innerText = "મેસેજ જનરેટ થઈ રહ્યો છે...";
+
+      try {
+        const res = await fetch(`/api/summary?date=${currentDate}`);
+        const s = await res.json();
+        
+        const dateGu = formatDateGu(currentDate);
+        const pending = s.pending_wards || [];
+        let pendingSection = "";
+        if (pending.length > 0) {
+          pendingSection = `🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI અધિકારી (${pending.length} વોર્ડ બાકી):*\n`;
+          pending.forEach((w) => {
+            const ssiPhone = w.ssi_phone ? ` (📞 ${w.ssi_phone})` : "";
+            pendingSection += `❌ *${w.ward_name}:* SSI ${w.ssi_name}${ssiPhone}\n`;
+          });
+          pendingSection += `--------------------------------\n📢 *સૂચના:* બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.\n`;
+        } else {
+          pendingSection = `✅ *તમામ ૧૩ વોર્ડ દ્વારા આજનું દૈનિક અપડેટ ૧૦૦% પૂર્ણ થઈ ગયેલ છે!*\n`;
+        }
+
+        const msg = `🏛️ *મોરબી મહાનગરપાલિકા - સોલિડ વેસ્ટ મેનેજમેન્ટ (SWM)*\n` +
+          `📅 *તારીખ:* ${dateGu} - દૈનિક ટ્રેક્ટર ફેરા સાંજનો ૬:૦૦ વાગ્યાનો સારાંશ\n` +
+          `═════════════════════════\n` +
+          `🚚 *કુલ ફેરા:* ${s.total_trips || 0} / ૭૮\n` +
+          `🚜 *હાજર ટ્રેક્ટર:* ${s.present_tractors || 0} / ૨૬\n` +
+          `🏢 *અપડેટ થયેલ વોર્ડ:* ${s.submitted_wards || 0} / ૧૩\n` +
+          `⚡ *ફેરા કાર્યક્ષમતા:* ${s.efficiency_rate || 0}%\n` +
+          `═════════════════════════\n` +
+          `${pendingSection}` +
+          `═════════════════════════\n` +
+          `_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ (ઓટો-જનરેટેડ સાંજે ૬:૦૦ વાગે)_`;
+
+        contentEl.innerText = msg;
+
+        // Render clickable WhatsApp recipient pills
+        const rawNumbers = document.getElementById("wa-cron-numbers").value;
+        const numList = rawNumbers.split(/[\n,]+/).map(s => s.trim().replace(/[^0-9]/g, "")).filter(s => s.length >= 10);
+        
+        pillsContainer.innerHTML = "";
+        if (numList.length > 0) {
+          const label = document.createElement("span");
+          label.className = "text-[11px] font-bold text-slate-600 block w-full mb-1";
+          label.innerText = `તમામ નંબરો પર સીધા મોકલવા માટે નીચે ક્લિક કરો (${numList.length} નંબરો):`;
+          pillsContainer.appendChild(label);
+
+          numList.forEach(num => {
+            const formattedNum = num.length === 10 ? `91${num}` : num;
+            const a = document.createElement("a");
+            a.href = `https://wa.me/${formattedNum}?text=${encodeURIComponent(msg)}`;
+            a.target = "_blank";
+            a.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-1 rounded-md border border-emerald-300 flex items-center gap-1 transition";
+            a.innerHTML = `<span>💬</span> ${num}`;
+            pillsContainer.appendChild(a);
+          });
+        }
+      } catch (e) {
+        contentEl.innerText = "પ્રિવ્યુ લોડ કરવામાં ભૂલ આવી: " + e.message;
+      }
+    }
+
+    async function triggerWhatsAppNow() {
+      if (!isAdmin) {
+        showToast("મેસેજ મોકલવા માટે માસ્ટર એડમિન લોગિન જરૂરી છે!", "⚠️", "bg-amber-600");
+        openMasterAdminPrompt();
+        return;
+      }
+
+      const pinToUse = cachedAdminPin || sessionStorage.getItem("admin_pin") || "87654321";
+      try {
+        const res = await fetch("/api/whatsapp_trigger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            admin_pin: pinToUse,
+            date: currentDate
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`દૈનિક સારાંશ ${data.recipients.length} નંબરો માટે જનરેટ થઈ ગયો!`, "📲", "bg-emerald-600");
+          previewWhatsAppCronMessage();
+          loadWhatsAppCronConfig();
+
+          if (data.recipients && data.recipients.length > 0) {
+            const firstNum = data.recipients[0];
+            const cleanNum = firstNum.length === 10 ? `91${firstNum}` : firstNum;
+            window.open(`https://wa.me/${cleanNum}?text=${encodeURIComponent(data.message)}`, '_blank');
+          } else {
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(data.message)}`, '_blank');
+          }
+        } else {
+          showToast(data.error || "ભૂલ આવી!", "❌", "bg-rose-600");
+        }
+      } catch (e) {
+        showToast("સર્વર સાથે કનેક્ટ થઈ શક્યું નહીં!", "❌", "bg-rose-600");
       }
     }
 

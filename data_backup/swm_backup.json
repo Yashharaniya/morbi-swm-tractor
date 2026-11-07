@@ -1,9 +1,14 @@
 {
-  "exported_at": "2026-11-07T13:55:23.704270",
+  "exported_at": "2026-11-07T14:09:50.745914",
   "version": "2.0_secure",
   "system_config": {
     "admin_pin": "87654321",
-    "admin_hint": "81"
+    "admin_hint": "81",
+    "whatsapp_cron_enabled": "1",
+    "whatsapp_cron_time": "18:00",
+    "whatsapp_cron_numbers": "9974599703, 9925182979, 7069151493",
+    "whatsapp_last_sent_date": "",
+    "whatsapp_webhook_url": ""
   },
   "wards": [
     {

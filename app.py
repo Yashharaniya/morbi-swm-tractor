@@ -4,7 +4,10 @@ import json
 import sqlite3
 import os
 import urllib.parse
+import urllib.request
 import calendar
+import threading
+import time
 from datetime import datetime, date
 from excel_generator import generate_dymc_excel_report, generate_monthly_excel_report
 from db_backup_manager import backup_database_to_json, restore_database_from_json, DB_PATH, BACKUP_FILE
@@ -289,6 +292,135 @@ def get_monthly_matrix(year, month):
     conn.close()
     return result
 
+def generate_whatsapp_summary_text(query_date=None):
+    if not query_date:
+        query_date = datetime.now().strftime("%Y-%m-%d")
+    s = get_summary(query_date)
+    date_parts = query_date.split("-")
+    date_gu = f"{date_parts[2]}/{date_parts[1]}/{date_parts[0]}" if len(date_parts) == 3 else query_date
+    pending = s.get("pending_wards", [])
+    
+    pending_lines = []
+    if pending:
+        pending_lines.append(f"🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI અધિકારી ({len(pending)} વોર્ડ બાકી):*")
+        for w in pending:
+            phone_str = f" (📞 {w['ssi_phone']})" if w.get('ssi_phone') else ""
+            si_str = f" | SI: {w['si_name']}" if w.get('si_name') and w['si_name'] != "સેનિટરી ઇન્સ્પેક્ટર" else ""
+            pending_lines.append(f"❌ *{w['ward_name']}:* SSI {w['ssi_name']}{phone_str}{si_str}")
+        pending_lines.append("--------------------------------")
+        pending_lines.append("📢 *સૂચના:* બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.")
+    else:
+        pending_lines.append("✅ *તમામ ૧૩ વોર્ડ દ્વારા આજનું દૈનિક અપડેટ ૧૦૦% પૂર્ણ થઈ ગયેલ છે!*")
+
+    pending_section = "\n".join(pending_lines)
+    
+    msg = (
+        f"🏛️ *મોરબી મહાનગરપાલિકા - સોલિડ વેસ્ટ મેનેજમેન્ટ (SWM)*\n"
+        f"📅 *તારીખ:* {date_gu} - દૈનિક ટ્રેક્ટર ફેરા સાંજનો ૬:૦૦ વાગ્યાનો સારાંશ\n"
+        f"═════════════════════════\n"
+        f"🚚 *કુલ ફેરા:* {s.get('total_trips', 0)} / ૭૮\n"
+        f"🚜 *હાજર ટ્રેક્ટર:* {s.get('present_tractors', 0)} / ૨૬\n"
+        f"🏢 *અપડેટ થયેલ વોર્ડ:* {s.get('submitted_wards', 0)} / ૧૩\n"
+        f"⚡ *ફેરા કાર્યક્ષમતા:* {s.get('efficiency_rate', 0)}%\n"
+        f"═════════════════════════\n"
+        f"{pending_section}\n"
+        f"═════════════════════════\n"
+        f"_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ (ઓટો-જનરેટેડ સાંજે ૬:૦૦ વાગે)_"
+    )
+    return msg
+
+def dispatch_whatsapp_message(date_str=None, source="CRON_AUTO"):
+    if not date_str:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_config WHERE key IN ('whatsapp_cron_numbers', 'whatsapp_webhook_url')")
+    cfg = {r["key"]: r["value"] for r in c.fetchall()}
+    raw_numbers = cfg.get("whatsapp_cron_numbers", "")
+    webhook_url = cfg.get("whatsapp_webhook_url", "").strip()
+
+    msg = generate_whatsapp_summary_text(date_str)
+    now_iso = datetime.now().isoformat()
+
+    numbers = []
+    for item in raw_numbers.replace("\n", ",").split(","):
+        cleaned = item.strip().replace(" ", "").replace("-", "")
+        if cleaned:
+            numbers.append(cleaned)
+
+    webhook_status = "READY_FOR_DISPATCH"
+    if webhook_url:
+        try:
+            req_data = json.dumps({"message": msg, "recipients": numbers, "date": date_str}).encode("utf-8")
+            req = urllib.request.Request(webhook_url, data=req_data, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                webhook_status = f"WEBHOOK_SENT_{resp.status}"
+        except Exception as e:
+            webhook_status = f"WEBHOOK_FAILED: {str(e)[:50]}"
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS whatsapp_logs (
+        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dispatched_at TEXT NOT NULL,
+        entry_date TEXT NOT NULL,
+        recipients TEXT NOT NULL,
+        status TEXT NOT NULL,
+        message TEXT NOT NULL,
+        trigger_type TEXT DEFAULT 'CRON_AUTO'
+    )
+    """)
+    recipients_str = ", ".join(numbers) if numbers else "કોઈ નંબર નથી"
+    c.execute("""
+    INSERT INTO whatsapp_logs (dispatched_at, entry_date, recipients, status, message, trigger_type)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (now_iso, date_str, recipients_str, webhook_status, msg, source))
+
+    c.execute("""
+    INSERT INTO audit_logs (action, ward_id, details, user_role, created_at)
+    VALUES ('WHATSAPP_CRON_DISPATCH', NULL, ?, 'System/Cron', ?)
+    """, (f"WhatsApp 6PM summary generated for {len(numbers)} numbers. Status: {webhook_status}", now_iso))
+
+    conn.commit()
+    conn.close()
+    return {
+        "success": True,
+        "message": msg,
+        "recipients": numbers,
+        "status": webhook_status,
+        "timestamp": now_iso
+    }
+
+def whatsapp_scheduler_worker():
+    while True:
+        try:
+            time.sleep(30)
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+            time_str = now.strftime("%H:%M")
+
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT key, value FROM system_config WHERE key IN ('whatsapp_cron_enabled', 'whatsapp_cron_time', 'whatsapp_last_sent_date')")
+            cfg = {r["key"]: r["value"] for r in c.fetchall()}
+            conn.close()
+
+            enabled = cfg.get("whatsapp_cron_enabled", "1") == "1"
+            target_time = cfg.get("whatsapp_cron_time", "18:00").strip()
+            last_date = cfg.get("whatsapp_last_sent_date", "").strip()
+
+            if enabled and time_str == target_time and last_date != today_str:
+                print(f"⏰ [CRON] Triggering scheduled WhatsApp summary at {time_str} for {today_str}...")
+                dispatch_whatsapp_message(today_str, source="CRON_SCHEDULED")
+
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('whatsapp_last_sent_date', ?)", (today_str,))
+                conn.commit()
+                conn.close()
+                backup_database_to_json()
+        except Exception as e:
+            print("Scheduler worker error:", e)
+
 class SWMHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=PUBLIC_DIR, **kwargs)
@@ -435,6 +567,8 @@ class SWMHandler(http.server.SimpleHTTPRequestHandler):
             logs = [dict(row) for row in c.fetchall()]
             conn.close()
             self.send_json(logs)
+        elif path == "/api/whatsapp_cron":
+            self.handle_get_whatsapp_cron()
         else:
             super().do_GET()
 
@@ -474,6 +608,10 @@ class SWMHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_update_master_tractor(body)
         elif path == "/api/update_master_ward":
             self.handle_update_master_ward(body)
+        elif path == "/api/whatsapp_cron":
+            self.handle_update_whatsapp_cron(body)
+        elif path == "/api/whatsapp_trigger":
+            self.handle_trigger_whatsapp_now(body)
         else:
             self.send_json({"error": "Not Found"}, status=404)
 
@@ -779,6 +917,79 @@ class SWMHandler(http.server.SimpleHTTPRequestHandler):
         backup_database_to_json()
         self.send_json({"success": True, "message": f"વોર્ડ {ward_id} ના SSI/SI અધિકારી સફળતાપૂર્વક અપડેટ થયા."})
 
+    def handle_get_whatsapp_cron(self):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT key, value FROM system_config WHERE key LIKE 'whatsapp_%'")
+        cfg = {r["key"]: r["value"] for r in c.fetchall()}
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS whatsapp_logs (
+            log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispatched_at TEXT NOT NULL,
+            entry_date TEXT NOT NULL,
+            recipients TEXT NOT NULL,
+            status TEXT NOT NULL,
+            message TEXT NOT NULL,
+            trigger_type TEXT DEFAULT 'CRON_AUTO'
+        )
+        """)
+        c.execute("SELECT log_id, dispatched_at, entry_date, recipients, status, trigger_type FROM whatsapp_logs ORDER BY log_id DESC LIMIT 10")
+        logs = [dict(r) for r in c.fetchall()]
+        conn.close()
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        preview_msg = generate_whatsapp_summary_text(today_str)
+
+        self.send_json({
+            "enabled": cfg.get("whatsapp_cron_enabled", "1") == "1",
+            "time": cfg.get("whatsapp_cron_time", "18:00"),
+            "numbers": cfg.get("whatsapp_cron_numbers", "9974599703, 9925182979, 7069151493"),
+            "last_sent_date": cfg.get("whatsapp_last_sent_date", ""),
+            "webhook_url": cfg.get("whatsapp_webhook_url", ""),
+            "preview_message": preview_msg,
+            "logs": logs
+        })
+
+    def handle_update_whatsapp_cron(self, body):
+        admin_pin = body.get("admin_pin", "")
+        if not verify_admin_pin(admin_pin):
+            self.send_json({"error": "માસ્ટર એડમિન પરવાનગી જરૂરી છે."}, status=401)
+            return
+
+        enabled = "1" if body.get("enabled", True) in [True, "1", 1] else "0"
+        cron_time = str(body.get("time", "18:00")).strip()
+        numbers = str(body.get("numbers", "")).strip()
+        webhook_url = str(body.get("webhook_url", "")).strip()
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('whatsapp_cron_enabled', ?)", (enabled,))
+        c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('whatsapp_cron_time', ?)", (cron_time,))
+        c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('whatsapp_cron_numbers', ?)", (numbers,))
+        c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('whatsapp_webhook_url', ?)", (webhook_url,))
+
+        c.execute("""
+        INSERT INTO audit_logs (action, ward_id, details, user_role, created_at)
+        VALUES ('UPDATE_WHATSAPP_CONFIG', NULL, ?, 'DyMC/Admin', ?)
+        """, (f"WhatsApp Cron updated: Enabled={enabled}, Time={cron_time}", datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+        backup_database_to_json()
+        self.send_json({"success": True, "message": "WhatsApp ક્રોનજોબ સેટિંગ્સ સફળતાપૂર્વક સાચવાઈ ગઈ!"})
+
+    def handle_trigger_whatsapp_now(self, body):
+        admin_pin = body.get("admin_pin", "")
+        if not verify_admin_pin(admin_pin):
+            self.send_json({"error": "માસ્ટર એડમિન પરવાનગી જરૂરી છે."}, status=401)
+            return
+
+        target_date = body.get("date", datetime.now().strftime("%Y-%m-%d"))
+        result = dispatch_whatsapp_message(target_date, source="ADMIN_MANUAL")
+        backup_database_to_json()
+        self.send_json(result)
+
     def send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -824,6 +1035,22 @@ def ensure_database_integrity():
             c.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('admin_pin', '87654321')")
             c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('admin_hint', '81')")
+            c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('whatsapp_cron_enabled', '1')")
+            c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('whatsapp_cron_time', '18:00')")
+            c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('whatsapp_cron_numbers', '9974599703, 9925182979, 7069151493')")
+            c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('whatsapp_last_sent_date', '')")
+            c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES ('whatsapp_webhook_url', '')")
+            c.execute("""
+            CREATE TABLE IF NOT EXISTS whatsapp_logs (
+                log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dispatched_at TEXT NOT NULL,
+                entry_date TEXT NOT NULL,
+                recipients TEXT NOT NULL,
+                status TEXT NOT NULL,
+                message TEXT NOT NULL,
+                trigger_type TEXT DEFAULT 'CRON_AUTO'
+            )
+            """)
             conn.commit()
             conn.close()
         except Exception as e:
@@ -834,6 +1061,15 @@ def run():
     ensure_database_integrity()
     socketserver.TCPServer.allow_reuse_address = True
     server_address = ("", PORT)
+    
+    # Start background 6:00 PM WhatsApp Cron Scheduler
+    try:
+        scheduler_thread = threading.Thread(target=whatsapp_scheduler_worker, daemon=True)
+        scheduler_thread.start()
+        print("⏰ Daily WhatsApp 6:00 PM Cron Scheduler active in background.")
+    except Exception as e:
+        print("Could not start scheduler:", e)
+
     with socketserver.ThreadingTCPServer(server_address, SWMHandler) as httpd:
         print(f"🚀 Morbi SWM Server running at http://localhost:{PORT}")
         print(f"📁 Serving static files from {PUBLIC_DIR}")
