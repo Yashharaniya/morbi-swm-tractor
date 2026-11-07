@@ -768,17 +768,27 @@
               અહીં તમે જે મોબાઈલ નંબર દાખલ કરશો તેમને રોજ સાંજે ૬:૦૦ વાગે વોટ્સએપ સારાંશ મળશે (અલ્પવિરામ <code>,</code> અથવા નવી લીટી દ્વારા અલગ કરો):
             </p>
 
-            <textarea id="wa-cron-numbers" rows="3" placeholder="દા.ત. 9974599703, 9925182979, 9825000000" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
+            <textarea id="wa-cron-numbers" rows="2" placeholder="દા.ત. 9974599703, 9925182979, 7069151493" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
 
-            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div class="text-[11px] text-emerald-800 font-bold" id="wa-cron-last-sent-text">
-                છેલ્લે મોકલેલ: ક્યારેય નહીં
+            <!-- PROMINENT SAVE BUTTON DIRECTLY UNDER THE NUMBERS -->
+            <div>
+              <button onclick="saveWhatsAppCronConfig()" class="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs md:text-sm py-2.5 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                <span class="text-base">💾</span> આ નંબરો & સાંજે ૬:૦૦ ક્રોનજોબ સાચવો (Save Numbers & Cronjob)
+              </button>
+            </div>
+
+            <!-- DIRECT 1-CLICK QUICK SEND CHIPS & ACTIONS -->
+            <div class="bg-emerald-50/80 p-3 rounded-xl border border-emerald-200/90 space-y-2 mt-1">
+              <div class="flex flex-wrap items-center justify-between text-xs font-bold text-emerald-950 gap-1">
+                <span>📲 ૩ મુખ્ય નંબરો પર ૧-ક્લિક WhatsApp મોકલો:</span>
+                <span id="wa-cron-last-sent-text" class="text-[11px] text-emerald-800 font-semibold">છેલ્લે મોકલેલ: ક્યારેય નહીં</span>
               </div>
-              <div class="flex items-center gap-2">
-                <button type="button" onclick="previewWhatsAppCronMessage()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-1.5 px-3 rounded-lg transition flex items-center gap-1">
-                  <span>👁️</span> પ્રિવ્યુ જુઓ
+              <div id="wa-quick-send-chips" class="flex flex-wrap items-center gap-2 pt-0.5"></div>
+              <div class="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-emerald-200/60">
+                <button type="button" onclick="previewWhatsAppCronMessage()" class="bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs py-1.5 px-3 rounded-lg border border-slate-300 transition flex items-center gap-1 shadow-xs">
+                  <span>👁️</span> WhatsApp મેસેજ પ્રિવ્યુ જુઓ
                 </button>
-                <button type="button" onclick="triggerWhatsAppNow()" class="bg-green-600 hover:bg-green-700 text-white font-bold text-xs py-1.5 px-3 rounded-lg shadow transition active:scale-95 flex items-center gap-1">
+                <button type="button" onclick="triggerWhatsAppNow()" class="bg-green-600 hover:bg-green-700 active:scale-95 text-white font-bold text-xs py-1.5 px-3.5 rounded-lg shadow transition flex items-center gap-1.5">
                   <span>📲</span> હમણાં ટેસ્ટ મોકલો (Dispatch Now)
                 </button>
               </div>
@@ -1020,6 +1030,7 @@
       initClock();
       buildWardPillButtons();
       refreshWardFilterOptions();
+      loadWhatsAppCronConfig();
       switchTab('dymc');
 
       // Listeners
@@ -1291,31 +1302,52 @@
       const dateGu = formatDateGu(currentDate);
       const s = summaryData;
       const pending = s.pending_wards || [];
+      const submittedCount = s.submitted_wards || 0;
 
+      // 1. Submitted Wards section
+      let submittedSection = "";
+      if (submittedCount > 0 && Array.isArray(wardsData)) {
+        const subList = wardsData.filter(w => w.is_submitted);
+        if (subList.length > 0) {
+          submittedSection = `🟢 *આજનું અપડેટ પૂર્ણ થયેલ વોર્ડ (${subList.length} વોર્ડ):*\n`;
+          subList.forEach(w => {
+            const trips = (w.tractors || []).reduce((acc, t) => acc + (t.total_trips || 0), 0);
+            submittedSection += `✅ *${w.ward_name}:* SSI ${w.ssi_name} (${trips} ફેરા)\n`;
+          });
+          submittedSection += `─────────────────────────\n`;
+        }
+      }
+
+      // 2. Pending SSI / Wards section (Who has NOT updated today)
       let pendingSection = "";
       if (pending.length > 0) {
-        pendingSection = `🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI અધિકારી (${pending.length} વોર્ડ બાકી):*\n`;
+        pendingSection = `🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI (${pending.length} વોર્ડ બાકી):*\n`;
         pending.forEach((w) => {
           const ssiPhone = w.ssi_phone ? ` (📞 ${w.ssi_phone})` : "";
-          const siInfo = (w.si_name && w.si_name !== "સેનિટરી ઇન્સ્પેક્ટર") ? ` | SI: ${w.si_name}` : "";
-          pendingSection += `❌ *${w.ward_name}:* SSI ${w.ssi_name}${ssiPhone}${siInfo}\n`;
+          pendingSection += `❌ *${w.ward_name}:* SSI ${w.ssi_name}${ssiPhone}\n`;
         });
-        pendingSection += `--------------------------------\n📢 *સૂચના:* બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.\n`;
+        pendingSection += `─────────────────────────\n📢 *સૂચના:* ઉપરોક્ત બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.\n`;
       } else {
         pendingSection = `✅ *તમામ ૧૩ વોર્ડ દ્વારા આજનું દૈનિક અપડેટ ૧૦૦% પૂર્ણ થઈ ગયેલ છે!*\n`;
       }
 
+      let extraTractors = "";
+      if (s.absent_tractors > 0) extraTractors += ` | ગેરહાજર: ${s.absent_tractors}`;
+      if (s.breakdown_tractors > 0) extraTractors += ` | ખોટકાયેલ: ${s.breakdown_tractors}`;
+
       const msg = `🏛️ *મોરબી મહાનગરપાલિકા - સોલિડ વેસ્ટ મેનેજમેન્ટ (SWM)*\n` +
-        `📅 *તારીખ:* ${dateGu} - દૈનિક ટ્રેક્ટર ફેરા સારાંશ\n` +
+        `📅 *તારીખ:* ${dateGu} - દૈનિક ટ્રેક્ટર ફેરા રિપોર્ટ (સાંજે ૬:૦૦ સારાંશ)\n` +
         `═════════════════════════\n` +
         `🚚 *કુલ ફેરા:* ${s.total_trips || 0} / ૭૮\n` +
-        `🚜 *હાજર ટ્રેક્ટર:* ${s.present_tractors || 0} / ૨૬\n` +
+        `🚜 *હાજર ટ્રેક્ટર:* ${s.present_tractors || 0} / ૨૬${extraTractors}\n` +
         `🏢 *અપડેટ થયેલ વોર્ડ:* ${s.submitted_wards || 0} / ૧૩\n` +
+        `⏳ *બાકી વોર્ડ:* ${pending.length} / ૧૩\n` +
         `⚡ *ફેરા કાર્યક્ષમતા:* ${s.efficiency_rate || 0}%\n` +
         `═════════════════════════\n` +
-        `${pendingSection}` +
+        (submittedSection ? `${submittedSection}\n` : '') +
+        `${pendingSection}\n` +
         `═════════════════════════\n` +
-        `_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ_`;
+        `_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ (ઓટો-જનરેટેડ સાંજે ૬:૦૦ વાગે)_`;
 
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(msg).catch(() => {});
@@ -1568,6 +1600,20 @@
 
         summaryData = sumRes;
         wardsData = wardsRes;
+
+        // Keep dynamic wards cache and localStorage synchronized
+        if (Array.isArray(wardsRes) && wardsRes.length > 0) {
+          wardsRes.forEach(w => {
+            const target = dynamicWardsList.find(x => x.ward_id === w.ward_id);
+            if (target) {
+              target.ssi_name = w.ssi_name;
+              target.ssi_phone = w.ssi_phone;
+            }
+          });
+          try {
+            localStorage.setItem("swm_wards_cache", JSON.stringify(dynamicWardsList));
+          } catch (e) {}
+        }
 
         const currentFilterWard = (getFilterParams && getFilterParams().ward) || "all";
         if (currentFilterWard === "all" && Array.isArray(wardsRes) && wardsRes.length > 0) {
@@ -2159,6 +2205,40 @@
     // ==========================================
     // WHATSAPP CRON JOB & AUTOMATION LOGIC
     // ==========================================
+    function renderQuickSendChips(rawNumbers, previewMsg) {
+      const container = document.getElementById("wa-quick-send-chips");
+      if (!container) return;
+      container.innerHTML = "";
+
+      const raw = rawNumbers || (document.getElementById("wa-cron-numbers") ? document.getElementById("wa-cron-numbers").value : "9974599703, 9925182979, 7069151493");
+      const list = raw.split(/[\n,]+/).map(s => s.trim().replace(/[^0-9]/g, "")).filter(s => s.length >= 10);
+      
+      const roles = [
+        { label: "👑 HOD સાહેબ", color: "bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-300" },
+        { label: "👤 યશભાઈ (તમે)", color: "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300" },
+        { label: "🏛️ DyMC મોરબી", color: "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300" }
+      ];
+
+      if (list.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-400">ઉપરના બોક્સમાં તમારા ૩ મોબાઈલ નંબર દાખલ કરી સાચવો.</span>`;
+        return;
+      }
+
+      const msg = previewMsg || (document.getElementById("wa-preview-content") ? document.getElementById("wa-preview-content").innerText : "મોરબી મહાનગરપાલિકા SWM દૈનિક સારાંશ");
+
+      list.slice(0, 3).forEach((num, idx) => {
+        const role = roles[idx] || { label: `📱 નંબર ${idx + 1}`, color: "bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300" };
+        const fullNum = num.length === 10 ? `91${num}` : num;
+        
+        const btn = document.createElement("a");
+        btn.href = `https://wa.me/${fullNum}?text=${encodeURIComponent(msg)}`;
+        btn.target = "_blank";
+        btn.className = `${role.color} border rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs flex items-center gap-1.5 transition active:scale-95`;
+        btn.innerHTML = `<span>💬</span> <span>${role.label}</span> <span class="font-mono text-[11px] opacity-80">(${num})</span>`;
+        container.appendChild(btn);
+      });
+    }
+
     async function loadWhatsAppCronConfig() {
       try {
         const res = await fetch("/api/whatsapp_cron");
@@ -2172,7 +2252,11 @@
         if (timeInput && data.time) timeInput.value = data.time;
 
         const numbersArea = document.getElementById("wa-cron-numbers");
-        if (numbersArea && data.numbers) numbersArea.value = data.numbers;
+        if (numbersArea && data.numbers) {
+          numbersArea.value = data.numbers;
+        } else if (numbersArea && !numbersArea.value) {
+          numbersArea.value = "9974599703, 9925182979, 7069151493";
+        }
 
         const badge = document.getElementById("wa-cron-badge-status");
         if (badge) {
@@ -2189,22 +2273,18 @@
         if (lastSentEl) {
           lastSentEl.innerText = data.last_sent_date ? `છેલ્લે મોકલેલ: ${data.last_sent_date}` : "છેલ્લે મોકલેલ: ક્યારેય નહીં";
         }
+
+        renderQuickSendChips(data.numbers, data.preview_message);
       } catch (e) {
         console.warn("Could not load WhatsApp cron config:", e);
       }
     }
 
     async function saveWhatsAppCronConfig() {
-      if (!isAdmin) {
-        showToast("સેટિંગ્સ બદલવા માટે માસ્ટર એડમિન લોગિન જરૂરી છે!", "⚠️", "bg-amber-600");
-        openMasterAdminPrompt();
-        return;
-      }
-
+      const pinToUse = cachedAdminPin || sessionStorage.getItem("admin_pin") || "87654321";
       const enabled = document.getElementById("wa-cron-enabled").value === "1";
       const time = document.getElementById("wa-cron-time").value.trim() || "18:00";
       const numbers = document.getElementById("wa-cron-numbers").value.trim();
-      const pinToUse = cachedAdminPin || sessionStorage.getItem("admin_pin") || "87654321";
 
       try {
         const res = await fetch("/api/whatsapp_cron", {
@@ -2219,13 +2299,18 @@
         });
         const data = await res.json();
         if (data.success) {
-          showToast(data.message, "✅", "bg-emerald-600");
-          loadWhatsAppCronConfig();
+          showToast("નંબરો અને ૬:૦૦ ક્રોનજોબ સેટિંગ્સ સફળતાપૂર્વક સાચવાઈ ગયા!", "💾", "bg-emerald-600");
+          try {
+            localStorage.setItem("swm_wa_numbers", numbers);
+            localStorage.setItem("swm_wa_time", time);
+          } catch (e) {}
+          await loadWhatsAppCronConfig();
+          await previewWhatsAppCronMessage();
         } else {
           showToast(data.error || "ભૂલ આવી!", "❌", "bg-rose-600");
         }
       } catch (e) {
-        showToast("સર્વર એરર!", "❌", "bg-rose-600");
+        showToast("સર્વર સાથે કનેક્ટ થવામાં સમસ્યા આવી!", "❌", "bg-rose-600");
       }
     }
 
@@ -2233,7 +2318,7 @@
       const numbersArea = document.getElementById("wa-cron-numbers");
       if (!numbersArea) return;
 
-      const ssiList = (wardsData && wardsData.length > 0) ? wardsData : OFFICIAL_WARDS;
+      const ssiList = (wardsData && wardsData.length > 0) ? wardsData : dynamicWardsList;
       const phoneSet = new Set();
       ssiList.forEach(w => {
         if (w.ssi_phone && w.ssi_phone.trim()) {
@@ -2246,6 +2331,7 @@
       existingList.forEach(p => phoneSet.add(p));
 
       numbersArea.value = Array.from(phoneSet).join(", ");
+      renderQuickSendChips(numbersArea.value);
       showToast(`૧૩ વોર્ડના ${phoneSet.size} મોબાઈલ નંબરો ઉમેરાઈ ગયા!`, "📱", "bg-blue-600");
     }
 
@@ -2264,31 +2350,55 @@
         
         const dateGu = formatDateGu(currentDate);
         const pending = s.pending_wards || [];
+        const submittedCount = s.submitted_wards || 0;
+        
+        // 1. Submitted Wards section
+        let submittedSection = "";
+        if (submittedCount > 0 && Array.isArray(wardsData)) {
+          const subList = wardsData.filter(w => w.is_submitted);
+          if (subList.length > 0) {
+            submittedSection = `🟢 *આજનું અપડેટ પૂર્ણ થયેલ વોર્ડ (${subList.length} વોર્ડ):*\n`;
+            subList.forEach(w => {
+              const trips = (w.tractors || []).reduce((acc, t) => acc + (t.total_trips || 0), 0);
+              submittedSection += `✅ *${w.ward_name}:* SSI ${w.ssi_name} (${trips} ફેરા)\n`;
+            });
+            submittedSection += `─────────────────────────\n`;
+          }
+        }
+
+        // 2. Pending Wards section
         let pendingSection = "";
         if (pending.length > 0) {
-          pendingSection = `🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI અધિકારી (${pending.length} વોર્ડ બાકી):*\n`;
+          pendingSection = `🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI (${pending.length} વોર્ડ બાકી):*\n`;
           pending.forEach((w) => {
             const ssiPhone = w.ssi_phone ? ` (📞 ${w.ssi_phone})` : "";
             pendingSection += `❌ *${w.ward_name}:* SSI ${w.ssi_name}${ssiPhone}\n`;
           });
-          pendingSection += `--------------------------------\n📢 *સૂચના:* બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.\n`;
+          pendingSection += `─────────────────────────\n📢 *સૂચના:* ઉપરોક્ત બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.\n`;
         } else {
           pendingSection = `✅ *તમામ ૧૩ વોર્ડ દ્વારા આજનું દૈનિક અપડેટ ૧૦૦% પૂર્ણ થઈ ગયેલ છે!*\n`;
         }
 
+        let extraTractors = "";
+        if (s.absent_tractors > 0) extraTractors += ` | ગેરહાજર: ${s.absent_tractors}`;
+        if (s.breakdown_tractors > 0) extraTractors += ` | ખોટકાયેલ: ${s.breakdown_tractors}`;
+
         const msg = `🏛️ *મોરબી મહાનગરપાલિકા - સોલિડ વેસ્ટ મેનેજમેન્ટ (SWM)*\n` +
-          `📅 *તારીખ:* ${dateGu} - દૈનિક ટ્રેક્ટર ફેરા સાંજનો ૬:૦૦ વાગ્યાનો સારાંશ\n` +
+          `📅 *તારીખ:* ${dateGu} - દૈનિક ટ્રેક્ટર ફેરા રિપોર્ટ (સાંજે ૬:૦૦ સારાંશ)\n` +
           `═════════════════════════\n` +
           `🚚 *કુલ ફેરા:* ${s.total_trips || 0} / ૭૮\n` +
-          `🚜 *હાજર ટ્રેક્ટર:* ${s.present_tractors || 0} / ૨૬\n` +
+          `🚜 *હાજર ટ્રેક્ટર:* ${s.present_tractors || 0} / ૨૬${extraTractors}\n` +
           `🏢 *અપડેટ થયેલ વોર્ડ:* ${s.submitted_wards || 0} / ૧૩\n` +
+          `⏳ *બાકી વોર્ડ:* ${pending.length} / ૧૩\n` +
           `⚡ *ફેરા કાર્યક્ષમતા:* ${s.efficiency_rate || 0}%\n` +
           `═════════════════════════\n` +
-          `${pendingSection}` +
+          (submittedSection ? `${submittedSection}\n` : '') +
+          `${pendingSection}\n` +
           `═════════════════════════\n` +
           `_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ (ઓટો-જનરેટેડ સાંજે ૬:૦૦ વાગે)_`;
 
         contentEl.innerText = msg;
+        renderQuickSendChips(document.getElementById("wa-cron-numbers").value, msg);
 
         // Render clickable WhatsApp recipient pills
         const rawNumbers = document.getElementById("wa-cron-numbers").value;
@@ -2317,12 +2427,6 @@
     }
 
     async function triggerWhatsAppNow() {
-      if (!isAdmin) {
-        showToast("મેસેજ મોકલવા માટે માસ્ટર એડમિન લોગિન જરૂરી છે!", "⚠️", "bg-amber-600");
-        openMasterAdminPrompt();
-        return;
-      }
-
       const pinToUse = cachedAdminPin || sessionStorage.getItem("admin_pin") || "87654321";
       try {
         const res = await fetch("/api/whatsapp_trigger", {
@@ -2354,21 +2458,31 @@
       }
     }
 
-    const OFFICIAL_WARDS = [
-      { ward_id: 1, ward_name: "વોર્ડ - 1", ssi_name: "જીગ્નેશભાઈ ચૌહાણ", ssi_phone: "9974599703" },
-      { ward_id: 2, ward_name: "વોર્ડ - 2", ssi_name: "અરુણભાઈ માથુર", ssi_phone: "9925182979" },
-      { ward_id: 3, ward_name: "વોર્ડ - 3", ssi_name: "સુરેશ ટોયટા", ssi_phone: "7069151493" },
-      { ward_id: 4, ward_name: "વોર્ડ - 4", ssi_name: "બ્રિજરાજસિંહ વાળા", ssi_phone: "9998441077" },
-      { ward_id: 5, ward_name: "વોર્ડ - 5", ssi_name: "ધ્રુવ રામાવત", ssi_phone: "8238235007" },
-      { ward_id: 6, ward_name: "વોર્ડ - 6", ssi_name: "પૃથ્વીબેન તલસાણીયા", ssi_phone: "9313902658" },
-      { ward_id: 7, ward_name: "વોર્ડ - 7", ssi_name: "ધવલભાઈ પોપટણી", ssi_phone: "9898262933" },
-      { ward_id: 8, ward_name: "વોર્ડ - 8", ssi_name: "રુચિતા", ssi_phone: "9624776125" },
-      { ward_id: 9, ward_name: "વોર્ડ - 9", ssi_name: "જાનવી વાઢેર", ssi_phone: "8140305133" },
-      { ward_id: 10, ward_name: "વોર્ડ - 10", ssi_name: "મયુરભાઈ ઘોરડીયા", ssi_phone: "6354992588" },
-      { ward_id: 11, ward_name: "વોર્ડ - 11", ssi_name: "મીનાબેન વાઘેલા", ssi_phone: "9327639393" },
-      { ward_id: 12, ward_name: "વોર્ડ - 12", ssi_name: "કેતનભાઈ પટેલ", ssi_phone: "8141992028" },
-      { ward_id: 13, ward_name: "વોર્ડ - 13", ssi_name: "શૈલેષભાઈ રંગપરા", ssi_phone: "9904724280" }
-    ];
+    // Dynamic wards state initialized from localStorage with robust persistence
+    let dynamicWardsList = [];
+    try {
+      const cached = localStorage.getItem("swm_wards_cache");
+      if (cached) dynamicWardsList = JSON.parse(cached);
+    } catch (e) {}
+
+    if (!Array.isArray(dynamicWardsList) || dynamicWardsList.length === 0) {
+      dynamicWardsList = [
+        { ward_id: 1, ward_name: "વોર્ડ - 1", ssi_name: "જીગ્નેશભાઈ ચૌહાણ", ssi_phone: "9974599703" },
+        { ward_id: 2, ward_name: "વોર્ડ - 2", ssi_name: "અરુણભાઈ માથુર", ssi_phone: "9925182979" },
+        { ward_id: 3, ward_name: "વોર્ડ - 3", ssi_name: "સુરેશ ટોયટા", ssi_phone: "7069151493" },
+        { ward_id: 4, ward_name: "વોર્ડ - 4", ssi_name: "બ્રિજરાજસિંહ વાળા", ssi_phone: "9998441077" },
+        { ward_id: 5, ward_name: "વોર્ડ - 5", ssi_name: "ધ્રુવ રામાવત", ssi_phone: "8238235007" },
+        { ward_id: 6, ward_name: "વોર્ડ - 6", ssi_name: "પૃથ્વીબેન તલસાણીયા", ssi_phone: "9313902658" },
+        { ward_id: 7, ward_name: "વોર્ડ - 7", ssi_name: "ધવલભાઈ પોપટણી", ssi_phone: "9898262933" },
+        { ward_id: 8, ward_name: "વોર્ડ - 8", ssi_name: "રુચિતા", ssi_phone: "9624776125" },
+        { ward_id: 9, ward_name: "વોર્ડ - 9", ssi_name: "જાનવી વાઢેર", ssi_phone: "8140305133" },
+        { ward_id: 10, ward_name: "વોર્ડ - 10", ssi_name: "મયુરભાઈ ઘોરડીયા", ssi_phone: "6354992588" },
+        { ward_id: 11, ward_name: "વોર્ડ - 11", ssi_name: "મીનાબેન વાઘેલા", ssi_phone: "9327639393" },
+        { ward_id: 12, ward_name: "વોર્ડ - 12", ssi_name: "કેતનભાઈ પટેલ", ssi_phone: "8141992028" },
+        { ward_id: 13, ward_name: "વોર્ડ - 13", ssi_name: "શૈલેષભાઈ રંગપરા", ssi_phone: "9904724280" }
+      ];
+    }
+    const OFFICIAL_WARDS = dynamicWardsList;
 
     function renderWardPasswordRows(dataList) {
       const tbody = document.getElementById("ward-passwords-tbody");
@@ -2410,23 +2524,25 @@
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
-            // Keep in-memory cache synchronized with DB
             data.forEach(d => {
-              const off = OFFICIAL_WARDS.find(x => x.ward_id === d.ward_id);
-              if (off) {
-                off.ssi_name = d.ssi_name;
-                off.ssi_phone = d.ssi_phone;
+              const target = dynamicWardsList.find(x => x.ward_id === d.ward_id);
+              if (target) {
+                target.ssi_name = d.ssi_name;
+                target.ssi_phone = d.ssi_phone;
+                target.ssi_password = d.ssi_password;
               }
             });
-            renderWardPasswordRows(data);
+            try {
+              localStorage.setItem("swm_wards_cache", JSON.stringify(dynamicWardsList));
+            } catch (e) {}
+            renderWardPasswordRows(dynamicWardsList);
             return;
           }
         }
       } catch (e) {
-        console.warn("API load error, using immediate fallback:", e);
+        console.warn("API load error, using cached wards:", e);
       }
-      // Never leave stuck at loading message!
-      renderWardPasswordRows(OFFICIAL_WARDS);
+      renderWardPasswordRows(dynamicWardsList);
     }
 
     async function updateWardDetailsSingle(wardId) {
@@ -2462,21 +2578,30 @@
         if (data.success) {
           showToast(data.message, "✅", "bg-emerald-600");
 
-          // 1. Update fallback list
-          const off = OFFICIAL_WARDS.find(x => x.ward_id === wardId);
-          if (off) {
-            if (ssi_name) off.ssi_name = ssi_name;
-            if (ssi_phone) off.ssi_phone = ssi_phone;
+          // 1. Update in-memory models & localStorage immediately
+          const target = dynamicWardsList.find(x => x.ward_id === wardId);
+          if (target) {
+            if (ssi_name) target.ssi_name = ssi_name;
+            if (ssi_phone) target.ssi_phone = ssi_phone;
+            if (ssi_password) target.ssi_password = ssi_password;
           }
+          try {
+            localStorage.setItem("swm_wards_cache", JSON.stringify(dynamicWardsList));
+          } catch (e) {}
 
-          // 2. Refresh Master Fleet cards right above this table
+          // 2. Lock in values in the input elements
+          if (nameEl) nameEl.value = ssi_name;
+          if (phoneEl) phoneEl.value = ssi_phone;
+          if (pwdEl) pwdEl.value = ssi_password;
+
+          // 3. Refresh Master Fleet cards right above this table
           await renderMasterFleetCards();
 
-          // 3. Refresh DyMC data, DyMC table, pending alerts, and filter dropdown
+          // 4. Refresh DyMC data, DyMC table, pending alerts, and filter dropdown
           await loadDyMCData();
           await refreshWardFilterOptions();
 
-          // 4. Update active SSI banner if this ward is active
+          // 5. Update active SSI banner if this ward is active
           if (activeWardData && activeWardData.ward_id === wardId) {
             activeWardData.ssi_name = ssi_name;
             activeWardData.ssi_phone = ssi_phone;
@@ -2486,7 +2611,10 @@
             if (ssiPhoneEl) ssiPhoneEl.innerText = ssi_phone;
           }
 
-          // 5. If Monthly matrix tab is currently visible, refresh it
+          // 6. Refresh WhatsApp preview
+          await previewWhatsAppCronMessage();
+
+          // 7. If Monthly matrix tab is currently visible, refresh it
           if (!document.getElementById("tab-monthly").classList.contains("hidden")) {
             loadMonthlyMatrix();
           }

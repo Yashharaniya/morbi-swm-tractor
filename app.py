@@ -8,9 +8,12 @@ import urllib.request
 import calendar
 import threading
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from excel_generator import generate_dymc_excel_report, generate_monthly_excel_report
 from db_backup_manager import backup_database_to_json, restore_database_from_json, DB_PATH, BACKUP_FILE
+
+# India Standard Time (UTC+5:30) for reliable 6:00 PM scheduling globally
+IST = timezone(timedelta(hours=5, minutes=30))
 
 PORT = int(os.environ.get("PORT", 8000))
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "public")
@@ -294,36 +297,79 @@ def get_monthly_matrix(year, month):
 
 def generate_whatsapp_summary_text(query_date=None):
     if not query_date:
-        query_date = datetime.now().strftime("%Y-%m-%d")
+        query_date = datetime.now(IST).strftime("%Y-%m-%d")
     s = get_summary(query_date)
     date_parts = query_date.split("-")
     date_gu = f"{date_parts[2]}/{date_parts[1]}/{date_parts[0]}" if len(date_parts) == 3 else query_date
     pending = s.get("pending_wards", [])
-    
+    submitted_count = s.get("submitted_wards", 0)
+    total_trips = s.get("total_trips", 0)
+    present_tractors = s.get("present_tractors", 0)
+    absent_tractors = s.get("absent_tractors", 0)
+    breakdown_tractors = s.get("breakdown_tractors", 0)
+    efficiency_rate = s.get("efficiency_rate", 0)
+
+    # 1. Submitted Wards section
+    submitted_lines = []
+    if submitted_count > 0:
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("""
+                SELECT w.ward_name, w.ssi_name, SUM(COALESCE(d.total_trips, 0)) as trips
+                FROM daily_entries d
+                JOIN wards w ON d.ward_id = w.ward_id
+                WHERE d.entry_date = ? AND d.is_submitted = 1
+                GROUP BY w.ward_id, w.ward_name, w.ssi_name
+                ORDER BY w.ward_id
+            """, (query_date,))
+            sub_rows = c.fetchall()
+            conn.close()
+            if sub_rows:
+                submitted_lines.append(f"🟢 *આજનું અપડેટ પૂર્ણ થયેલ વોર્ડ ({len(sub_rows)} વોર્ડ):*")
+                for sr in sub_rows:
+                    submitted_lines.append(f"✅ *{sr['ward_name']}:* SSI {sr['ssi_name']} ({sr['trips']} ફેરા)")
+                submitted_lines.append("─────────────────────────")
+        except Exception as e:
+            print("Error querying submitted wards for summary:", e)
+
+    # 2. Pending SSI / Wards section (Who has NOT updated today)
     pending_lines = []
     if pending:
-        pending_lines.append(f"🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI અધિકારી ({len(pending)} વોર્ડ બાકી):*")
+        pending_lines.append(f"🔴 *આજનું દૈનિક અપડેટ બાકી હોય તેવા વોર્ડ & SSI ({len(pending)} વોર્ડ બાકી):*")
         for w in pending:
             phone_str = f" (📞 {w['ssi_phone']})" if w.get('ssi_phone') else ""
             si_str = f" | SI: {w['si_name']}" if w.get('si_name') and w['si_name'] != "સેનિટરી ઇન્સ્પેક્ટર" else ""
             pending_lines.append(f"❌ *{w['ward_name']}:* SSI {w['ssi_name']}{phone_str}{si_str}")
-        pending_lines.append("--------------------------------")
-        pending_lines.append("📢 *સૂચના:* બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.")
+        pending_lines.append("─────────────────────────")
+        pending_lines.append("📢 *સૂચના:* ઉપરોક્ત બાકી રહેલ તમામ SSI અધિકારીઓએ પોર્ટલ પર આજની એન્ટ્રી તાત્કાલિક પૂર્ણ કરવી.")
     else:
         pending_lines.append("✅ *તમામ ૧૩ વોર્ડ દ્વારા આજનું દૈનિક અપડેટ ૧૦૦% પૂર્ણ થઈ ગયેલ છે!*")
 
-    pending_section = "\n".join(pending_lines)
-    
+    details_parts = []
+    if submitted_lines:
+        details_parts.append("\n".join(submitted_lines))
+    if pending_lines:
+        details_parts.append("\n".join(pending_lines))
+    details_section = "\n\n".join(details_parts)
+
+    tractor_status_extra = ""
+    if absent_tractors > 0:
+        tractor_status_extra += f" | ગેરહાજર: {absent_tractors}"
+    if breakdown_tractors > 0:
+        tractor_status_extra += f" | ખોટકાયેલ: {breakdown_tractors}"
+
     msg = (
         f"🏛️ *મોરબી મહાનગરપાલિકા - સોલિડ વેસ્ટ મેનેજમેન્ટ (SWM)*\n"
-        f"📅 *તારીખ:* {date_gu} - દૈનિક ટ્રેક્ટર ફેરા સાંજનો ૬:૦૦ વાગ્યાનો સારાંશ\n"
+        f"📅 *તારીખ:* {date_gu} - દૈનિક ટ્રેક્ટર ફેરા રિપોર્ટ (સાંજે ૬:૦૦ સારાંશ)\n"
         f"═════════════════════════\n"
-        f"🚚 *કુલ ફેરા:* {s.get('total_trips', 0)} / ૭૮\n"
-        f"🚜 *હાજર ટ્રેક્ટર:* {s.get('present_tractors', 0)} / ૨૬\n"
-        f"🏢 *અપડેટ થયેલ વોર્ડ:* {s.get('submitted_wards', 0)} / ૧૩\n"
-        f"⚡ *ફેરા કાર્યક્ષમતા:* {s.get('efficiency_rate', 0)}%\n"
+        f"🚚 *કુલ ફેરા:* {total_trips} / ૭૮\n"
+        f"🚜 *હાજર ટ્રેક્ટર:* {present_tractors} / ૨૬{tractor_status_extra}\n"
+        f"🏢 *અપડેટ થયેલ વોર્ડ:* {submitted_count} / ૧૩\n"
+        f"⏳ *બાકી વોર્ડ:* {len(pending)} / ૧૩\n"
+        f"⚡ *ફેરા કાર્યક્ષમતા:* {efficiency_rate}%\n"
         f"═════════════════════════\n"
-        f"{pending_section}\n"
+        f"{details_section}\n"
         f"═════════════════════════\n"
         f"_DyMC & HOD સોલિડ વેસ્ટ મોનિટરિંગ પોર્ટલ (ઓટો-જનરેટેડ સાંજે ૬:૦૦ વાગે)_"
     )
@@ -331,16 +377,16 @@ def generate_whatsapp_summary_text(query_date=None):
 
 def dispatch_whatsapp_message(date_str=None, source="CRON_AUTO"):
     if not date_str:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = datetime.now(IST).strftime("%Y-%m-%d")
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT key, value FROM system_config WHERE key IN ('whatsapp_cron_numbers', 'whatsapp_webhook_url')")
     cfg = {r["key"]: r["value"] for r in c.fetchall()}
-    raw_numbers = cfg.get("whatsapp_cron_numbers", "")
+    raw_numbers = cfg.get("whatsapp_cron_numbers", "9974599703, 9925182979, 7069151493")
     webhook_url = cfg.get("whatsapp_webhook_url", "").strip()
 
     msg = generate_whatsapp_summary_text(date_str)
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
 
     numbers = []
     for item in raw_numbers.replace("\n", ",").split(","):
@@ -394,9 +440,9 @@ def whatsapp_scheduler_worker():
     while True:
         try:
             time.sleep(30)
-            now = datetime.now()
-            today_str = now.strftime("%Y-%m-%d")
-            time_str = now.strftime("%H:%M")
+            now_ist = datetime.now(IST)
+            today_str = now_ist.strftime("%Y-%m-%d")
+            time_str = now_ist.strftime("%H:%M")
 
             conn = get_db()
             c = conn.cursor()
@@ -408,8 +454,9 @@ def whatsapp_scheduler_worker():
             target_time = cfg.get("whatsapp_cron_time", "18:00").strip()
             last_date = cfg.get("whatsapp_last_sent_date", "").strip()
 
-            if enabled and time_str == target_time and last_date != today_str:
-                print(f"⏰ [CRON] Triggering scheduled WhatsApp summary at {time_str} for {today_str}...")
+            # Trigger once per day at or after target_time in Indian Standard Time (18:00 = 6:00 PM)
+            if enabled and time_str >= target_time and last_date != today_str:
+                print(f"⏰ [CRON-IST] Triggering scheduled WhatsApp summary at IST {time_str} for {today_str}...")
                 dispatch_whatsapp_message(today_str, source="CRON_SCHEDULED")
 
                 conn = get_db()
